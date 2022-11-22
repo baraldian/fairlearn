@@ -9,6 +9,7 @@ import pandas as pd
 import scipy.optimize as opt
 from sklearn import clone
 from sklearn.dummy import DummyClassifier
+from sklearn.utils import check_random_state
 
 from fairlearn.reductions._moments import ClassificationMoment
 
@@ -64,6 +65,8 @@ class _Lagrangian:
         objective=None,
         opt_lambda=True,
         sample_weight_name="sample_weight",
+        subsample=None,
+        random_state=None,
         **kwargs,
     ):
         self.constraints = constraints
@@ -93,6 +96,8 @@ class _Lagrangian:
         self.last_linprog_n_hs = 0
         self.last_linprog_result = None
         self.sample_weight_name = sample_weight_name
+        self.subsample = subsample
+        self.random_state = check_random_state(random_state)
 
     def _eval(self, Q, lambda_vec):
         """Return the value of the Lagrangian.
@@ -193,17 +198,30 @@ class _Lagrangian:
         return self.last_linprog_result
 
     def _call_oracle(self, lambda_vec):
-        signed_weights = self.obj.signed_weights() + self.constraints.signed_weights(
+        t0 = time()
+        signed_weights = self.obj.signed_weights();
+        t1 = time()
+        signed_weights = signed_weights + self.constraints.signed_weights(
             lambda_vec
         )
+        t2 = time()
+
         if isinstance(self.constraints, ClassificationMoment):
             redY = 1 * (signed_weights > 0)
         else:
             redY = self.constraints._y_as_series
         redW = signed_weights.abs()
         redW = self.constraints.total_samples * redW / redW.sum()
+        t3 = time()
 
-        redY_unique = np.unique(redY)
+        if self.subsample != None:
+            index_sub = _sample(n=self.subsample, weights=redW, random_state=self.random_state)
+            redX_subsampled = self.constraints.X[index_sub, :]
+            redY_subsampled = redY[index_sub]
+        else:
+            redY_subsampled = redY
+        redY_unique = np.unique(redY_subsampled)
+        t4 = time()
 
         estimator = None
         if len(redY_unique) == 1:
@@ -218,9 +236,18 @@ class _Lagrangian:
             # get_params() internally.
             estimator = clone(estimator=self.estimator, safe=False)
 
-        oracle_call_start_time = time()
-        estimator.fit(self.constraints.X, redY, **{self.sample_weight_name: redW})
-        self.oracle_execution_times.append(time() - oracle_call_start_time)
+        if self.subsample != None:
+            estimator.fit(redX_subsampled, redY_subsampled)
+        else:
+            estimator.fit(self.constraints.X, redY, **{self.sample_weight_name: redW})
+        t5 = time()
+
+        self.oracle_execution_times.append(
+            {'wts-obj': t1-t0,
+             'wts-con': t2-t1,
+             'red-Y-W': t3-t2,
+             'subsample': t4-t3,
+             'fit': t5-t4})
         self.n_oracle_calls += 1
 
         return estimator
@@ -278,3 +305,20 @@ class _GapResult:
 
     def gap(self):
         return max(self.L - self.L_low, self.L_high - self.L)
+
+
+def _sample(*, n, weights, random_state, with_deterministic=False):
+    a = np.arange(weights.shape[0])
+    if not with_deterministic:
+        return random_state.choice(a, size=n, p=weights/weights.sum())
+    else:
+        weights_scaled = n * weights / np.sum(weights)
+        weights_det = np.floor(weights_scaled).astype(int)
+        sample_det = np.repeat(a, weights_det)
+        n_rand = n - np.sum(weights_det)
+        if n_rand > 0:
+            weights_rand = weights_scaled - weights_det
+            sample_rand = random_state.choice(a, size=n_rand, p=weights_rand/weights_rand.sum())
+            return np.concatenate([sample_det, sample_rand])
+        else:
+            return sample_det

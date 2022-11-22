@@ -109,6 +109,8 @@ class ExponentiatedGradient(BaseEstimator, MetaEstimatorMixin):
         eta0=2.0,
         run_linprog_step=True,
         sample_weight_name="sample_weight",
+        subsample=None,
+        random_state=None
     ):  # noqa: D103
         self.estimator = estimator
         self.constraints = constraints
@@ -119,6 +121,8 @@ class ExponentiatedGradient(BaseEstimator, MetaEstimatorMixin):
         self.eta0 = eta0
         self.run_linprog_step = run_linprog_step
         self.sample_weight_name = sample_weight_name
+        self.subsample = subsample
+        self.random_state = random_state
 
     def fit(self, X, y, **kwargs):
         """Return a fair classifier under specified fairness constraints.
@@ -145,6 +149,8 @@ class ExponentiatedGradient(BaseEstimator, MetaEstimatorMixin):
             B=B,
             objective=self.objective,
             sample_weight_name=self.sample_weight_name,
+            subsample=self.subsample,
+            random_state=self.random_state,
             **kwargs,
         )
 

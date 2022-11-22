@@ -153,6 +153,7 @@ class UtilityParity(ClassificationMoment):
                 ]
             ).T
         self.utilities = utilities
+        self.utility_diff = self.utilities[:, 1] - self.utilities[:, 0]
         self.prob_event = self.tags.groupby(_EVENT).size() / self.total_samples
         self.prob_group_event = (
             self.tags.groupby([_EVENT, _GROUP_ID]).size() / self.total_samples
@@ -164,6 +165,7 @@ class UtilityParity(ClassificationMoment):
         )
         self.index = signed.index
         self.default_objective_lambda_vec = None
+        self.M = None
 
         # fill in the information about the basis
         event_vals = self.tags[_EVENT].dropna().unique()
@@ -189,12 +191,15 @@ class UtilityParity(ClassificationMoment):
 
     def gamma(self, predictor):
         """Calculate the degree to which constraints are currently violated by the predictor."""
-        utility_diff = self.utilities[:, 1] - self.utilities[:, 0]
         predictions = predictor(self.X)
         if isinstance(predictions, np.ndarray):
             # TensorFlow seems to return an (n,1) array instead of an (n) array
             predictions = np.squeeze(predictions)
-        pred = utility_diff.T * predictions + self.utilities[:, 0]
+        pred = self.utility_diff.T * predictions + self.utilities[:, 0]
+        if self.M is not None:
+            g_signed_alt = -self.M.T.dot(pred) / self.total_samples
+            self._gamma_descr = "alt"
+            return g_signed_alt
         self.tags[_PREDICTION] = pred
         expect_event = self.tags.groupby(_EVENT).mean(numeric_only=True)
         expect_group_event = self.tags.groupby([_EVENT, _GROUP_ID]).mean()
@@ -263,6 +268,24 @@ class UtilityParity(ClassificationMoment):
             The vector of Lagrange multipliers indexed by `index`
 
         """
+        if self.M is None:
+            event_vals = self.tags[_EVENT].dropna().unique()
+            group_vals = self.tags[_GROUP_ID].unique()
+            self.M = pd.DataFrame(0, index=self.tags.index, columns=self.index)
+            #M_i,(+,g',e') =      1[e=e']/P(e) - rho*1[e=e',g=g']/P(g,e)
+            #M_i,(-,g',e') = -rho*1[e=e']/P(e) +     1[e=e',g=g']/P(g,e)
+            for event_val in event_vals:
+                for group in group_vals:
+                    event_select = 1*(self.tags[_EVENT] == event_val)
+                    group_event_select = event_select * (self.tags[_GROUP_ID] == group)
+                    self.M["+", event_val, group] = \
+                        event_select / self.prob_event[event_val] + \
+                        (-self.ratio) * group_event_select / self.prob_group_event[event_val, group]
+                    self.M["-", event_val, group] = \
+                        (-self.ratio) * event_select / self.prob_event[event_val] + \
+                        group_event_select / self.prob_group_event[event_val, group]
+        if self.M is not None:
+            return self.utility_diff * self.M.dot(lambda_vec)
         lambda_event = (lambda_vec["+"] - self.ratio * lambda_vec["-"]).groupby(
             level=_EVENT
         ).sum() / self.prob_event
