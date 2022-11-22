@@ -269,21 +269,18 @@ class UtilityParity(ClassificationMoment):
 
         """
         if self.M is None:
-            event_vals = self.tags[_EVENT].dropna().unique()
-            group_vals = self.tags[_GROUP_ID].unique()
             self.M = pd.DataFrame(0, index=self.tags.index, columns=self.index)
             #M_i,(+,g',e') =      1[e=e']/P(e) - rho*1[e=e',g=g']/P(g,e)
             #M_i,(-,g',e') = -rho*1[e=e']/P(e) +     1[e=e',g=g']/P(g,e)
-            for event_val in event_vals:
-                for group in group_vals:
-                    event_select = 1*(self.tags[_EVENT] == event_val)
-                    group_event_select = event_select * (self.tags[_GROUP_ID] == group)
-                    self.M["+", event_val, group] = \
-                        event_select / self.prob_event[event_val] + \
-                        (-self.ratio) * group_event_select / self.prob_group_event[event_val, group]
-                    self.M["-", event_val, group] = \
-                        (-self.ratio) * event_select / self.prob_event[event_val] + \
-                        group_event_select / self.prob_group_event[event_val, group]
+            for event, group in self.prob_group_event.index:
+                event_select = 1*(self.tags[_EVENT] == event)
+                group_event_select = event_select * (self.tags[_GROUP_ID] == group)
+                self.M["+", event, group] = \
+                    event_select / self.prob_event[event] + \
+                    (-self.ratio) * group_event_select / self.prob_group_event[event, group]
+                self.M["-", event, group] = \
+                    (-self.ratio) * event_select / self.prob_event[event] + \
+                        group_event_select / self.prob_group_event[event, group]
         if self.M is not None:
             return self.utility_diff * self.M.dot(lambda_vec)
         lambda_event = (lambda_vec["+"] - self.ratio * lambda_vec["-"]).groupby(
