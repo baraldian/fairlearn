@@ -10,8 +10,10 @@ import pandas as pd
 from sklearn.base import BaseEstimator, MetaEstimatorMixin
 from sklearn.dummy import DummyClassifier
 from sklearn.utils.validation import check_is_fitted
+from sklearn.utils import check_random_state
 
 from fairlearn.reductions._moments import ClassificationMoment, Moment
+from fairlearn.reductions._exponentiated_gradient._lagrangian import _sample
 
 from ._grid_generator import _GridGenerator
 
@@ -86,6 +88,8 @@ class GridSearch(BaseEstimator, MetaEstimatorMixin):
         grid_offset=None,
         grid=None,
         sample_weight_name="sample_weight",
+        subsample=None,
+        random_state=None
     ):
         """Construct a GridSearch object."""
         self.estimator = estimator
@@ -107,6 +111,8 @@ class GridSearch(BaseEstimator, MetaEstimatorMixin):
         self.grid_offset = grid_offset
         self.grid = grid
         self.sample_weight_name = sample_weight_name
+        self.subsample = subsample
+        self.random_state = check_random_state(random_state)
 
     def fit(self, X, y, **kwargs):
         """Run the grid search.
@@ -183,7 +189,14 @@ class GridSearch(BaseEstimator, MetaEstimatorMixin):
             else:
                 y_reduction = self.constraints._y_as_series
 
-            y_reduction_unique = np.unique(y_reduction)
+            if self.subsample != None:
+                index_sub = _sample(n=self.subsample, weights=weights, random_state=self.random_state)
+                X_sub = X[index_sub, :]
+                y_reduction_sub = y_reduction[index_sub]
+            else:
+                y_reduction_sub = y_reduction
+            y_reduction_unique = np.unique(y_reduction_sub)
+
             if len(y_reduction_unique) == 1:
                 logger.debug("y_reduction had single value. Using DummyClassifier")
                 current_estimator = DummyClassifier(
@@ -194,7 +207,10 @@ class GridSearch(BaseEstimator, MetaEstimatorMixin):
                 current_estimator = copy.deepcopy(self.estimator)
 
             oracle_call_start_time = time()
-            current_estimator.fit(X, y_reduction, **{self.sample_weight_name: weights})
+            if self.subsample != None:
+                current_estimator.fit(X_sub, y_reduction_sub)
+            else:
+                current_estimator.fit(X, y_reduction, **{self.sample_weight_name: weights})
             oracle_call_execution_time = time() - oracle_call_start_time
             logger.debug("Call to estimator complete")
 

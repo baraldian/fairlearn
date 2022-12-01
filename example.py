@@ -25,7 +25,8 @@ X_df['over_25'] = X_df['age']>=25
 X_dummies = pd.get_dummies(X_df)
 
 X = StandardScaler().fit_transform(X_dummies)
-A = X_df['sex']
+A = X_df[['sex']].to_numpy()
+#A = X_df[['sex','over_25']].to_numpy()
 y = dataset.target.map({'<=50K': 0, '>50K': 1})
 X_train, X_test, y_train, y_test, A_train, A_test = train_test_split(X, y, A, random_state=19)
 
@@ -33,7 +34,7 @@ rep = 2   # make training set artificially larger
 
 X_train = np.repeat(X_train, rep, axis=0)
 y_train = np.repeat(y_train, rep)
-A_train = np.repeat(A_train, rep)
+A_train = np.repeat(A_train, rep, axis=0)
 
 print(f"n_train = {X_train.shape[0]}\n")
 
@@ -58,3 +59,17 @@ for subsample in [100, 1000, 10000, None]:
     print(pd.concat( [times.loc[[0,1,n-1],:],
                       times.sum().to_frame(name='total').T]) )
     report(estimator=eg, name=name, random_state=19)
+
+    if subsample is None:
+        continue
+    subsample_gs = 2*subsample
+    name_gs = name+"gs"+str(subsample_gs)
+    t0 = time.time()
+    gs = flr.GridSearch(estimator=LogisticRegression(C=0.01, random_state=19),
+        constraints=flr.DemographicParity(difference_bound=0.05),
+        grid=eg.lambda_vecs_,
+        subsample=subsample_gs, random_state=1999)
+    gs.fit(X_train, y_train, sensitive_features=A_train)
+    elapsed_gs = time.time() - t0
+    print(f"{name_gs}.elapsed: {elapsed_gs:.3f}")
+    report(estimator=gs, name=name_gs)
