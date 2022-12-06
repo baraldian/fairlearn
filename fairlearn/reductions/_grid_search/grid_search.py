@@ -210,7 +210,7 @@ class GridSearch(BaseEstimator, MetaEstimatorMixin):
             if self.subsample != None:
                 current_estimator.fit(X_sub, y_reduction_sub)
             else:
-                current_estimator.fit(X, y_reduction, **{self.sample_weight_name: weights})
+                current_estimator.fit(X, y_reduction, **{self.sample_weight_name: weights.fillna(0)})
             oracle_call_execution_time = time() - oracle_call_start_time
             logger.debug("Call to estimator complete")
 

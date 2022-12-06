@@ -282,7 +282,8 @@ class UtilityParity(ClassificationMoment):
                     (-self.ratio) * event_select / self.prob_event[event] + \
                         group_event_select / self.prob_group_event[event, group]
         if self.M is not None:
-            return self.utility_diff * self.M.dot(lambda_vec)
+            M, lambda_vec = self.M.align(lambda_vec, axis=1, fill_value=0, copy=False)
+            return self.utility_diff * M.dot(lambda_vec) # ValueError: matrices are not aligned self.M (2921, 16) lambda_vec 12
         lambda_event = (lambda_vec["+"] - self.ratio * lambda_vec["-"]).groupby(
             level=_EVENT
         ).sum() / self.prob_event

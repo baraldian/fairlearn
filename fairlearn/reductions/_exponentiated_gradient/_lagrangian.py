@@ -216,7 +216,8 @@ class _Lagrangian:
 
         if self.subsample != None:
             index_sub = _sample(n=self.subsample, weights=redW, random_state=self.random_state)
-            redX_subsampled = self.constraints.X[index_sub, :]
+            index_sub = redW.index.isin(index_sub)
+            redX_subsampled = self.constraints.X[index_sub]
             redY_subsampled = redY[index_sub]
         else:
             redY_subsampled = redY
